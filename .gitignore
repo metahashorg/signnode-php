@@ -1,0 +1,3 @@
+/keys/*.key
+/includes/config.php
+/logs/request.log
