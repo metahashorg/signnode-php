@@ -6,6 +6,34 @@ header('Access-Control-Allow-Origin: *');
 
 define('ROOTDIR', dirname(__DIR__) .'/');
 
+function IncNonce($from){
+	if (!is_file(ROOTDIR . 'includes/nonce.json')){
+		$nonceArr = array($from => 1);
+		if (file_put_contents(ROOTDIR . 'includes/nonce.json', json_encode($nonceArr)) === false){
+			return false;
+		} else {
+			return 1;
+		}
+	}
+	$nonceArr = file_get_contents(ROOTDIR . 'includes/nonce.json');
+	if ($nonceArr == ''){
+		$nonceArr = array($from => 0);
+	} else {
+		$nonceArr = json_decode($nonceArr, true);
+		if (is_null($nonceArr)){
+			return false;
+		}
+	}
+
+	$nonce = isset($nonceArr[$from]) ? ($nonceArr[$from] + 1) : 1;
+	$nonceArr[$from] = $nonce;
+	if (file_put_contents(ROOTDIR . 'includes/nonce.json', json_encode($nonceArr)) === false){
+		return false;
+	} else {
+		return $nonce;
+	}
+}
+
 function AddressStandart($from){
 	if (strlen($from) != 52){
 		return false;
@@ -102,9 +130,16 @@ function mhcSendTransaction($data, $urlCore){
 			$retArr['error'] = true;
 			return json_encode($retArr);
 		}
+
+		$nonce = IncNonce($value['from']);
+		if ($nonce === false){
+			$retArr['error'] = true;
+			return json_encode($retArr);			
+		}
+
 		
 		$signData  = $value['from'] . $value['to'] . $value['fee'];
-		$signData .= $value['value'] . $value['data'];
+		$signData .= $value['value'] . $value['data'] . $nonce;
 		
 		$privateKey = file_get_contents(ROOTDIR . 'keys/' . $value['from'] . '.key');
 
@@ -115,6 +150,7 @@ function mhcSendTransaction($data, $urlCore){
 		$sign = $crypto->sign($signData, $privateKey);
 		$publicKey  = $crypto->privateToPublic($privateKey);
 		$value['publicKey']   = $publicKey;
+		$value['nonce']       = $nonce;
 		$value['signature']   = $sign;
 		$value['hash']   = hash('sha256', hash('sha256', $signData));
 		$postData['params'][] = $value;

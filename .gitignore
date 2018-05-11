@@ -1,3 +1,4 @@
 /keys/*.key
 /includes/config.php
 /logs/request.log
+/includes/nonce.json
