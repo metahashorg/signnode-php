@@ -6,6 +6,26 @@ header('Access-Control-Allow-Origin: *');
 
 define('ROOTDIR', dirname(__DIR__) .'/');
 
+function AddressStandart($from){
+	if (strlen($from) != 52){
+		return false;
+	}
+	if (substr($from, 0, 3) != '0x0'){
+		return false;
+	}
+	if (preg_match('/^[a-z0-9]+$/si', $from) == 0){
+		return false;
+	}
+	return true;
+}
+
+function CheckAdress($from){
+	if (AddressStandart($from)){
+		return is_file(ROOTDIR . 'keys/' . $from . '.key');
+	}
+	return false;
+}
+
 function mhcCreateAddress($data){
 	$crypto  = new Ecdsa16();
 	$keys    = $crypto->getKey();
@@ -74,6 +94,11 @@ function mhcSendTransaction($data, $urlCore){
 	foreach ($data['params'] as $key => $value) {
 		if (!(isset($value['from']) and isset($value['to']) and isset($value['fee']) and isset($value['value']) and 
 			  isset($value['data']))){			
+			$retArr['error'] = true;
+			return json_encode($retArr);
+		}
+
+		if (!CheckAdress($value['from'])){
 			$retArr['error'] = true;
 			return json_encode($retArr);
 		}
