@@ -10,7 +10,7 @@ function mhcCreateAddress($data){
 	$crypto  = new Ecdsa16();
 	$keys    = $crypto->getKey();
 	$address = $crypto->getAdress($keys['public']);
-	if (file_put_contents(ROOTDIR . 'keys/' . $address, $keys['private'] . '.key') === false){
+	if (file_put_contents(ROOTDIR . 'keys/' . $address . '.key', $keys['private']) === false){
 		echo json_encode(array('error' => true, 'msg' => 'CANT_SAVE_KEY'));
 	} else {
 		echo json_encode(array('error' => false, 'address' => $address));
@@ -57,8 +57,54 @@ function mhcVerify($data){
 	}
 }
 
-function mhcSendTransaction($data){
+function mhcSendTransaction($data, $urlCore){
+	$retArr  = array('id' => $data['id'], 'jsonrpc' => $data['jsonrpc'], 'error' => null);
+	if (!isset($data['params'])){
+		$retArr['error'] = true;
+		return json_encode($retArr);
+	}
 
+	$postData = array('version' => '1.0.0', 'method' => 'mh_sendTransaction', 'id'=>$data['id'], 'jsonrpc' => $data['jsonrpc'], 'params' => array());
+	
+	$proxyHeader = array('X-Real-IP: ' . $_SERVER['SERVER_ADDR'], 
+	                     'X-Forwarded-For: ' . $_SERVER['REMOTE_ADDR'] . ', ' . $_SERVER['SERVER_ADDR']);
+
+
+	$crypto = new Ecdsa16();
+	foreach ($data['params'] as $key => $value) {
+		if (!(isset($value['from']) and isset($value['to']) and isset($value['fee']) and isset($value['value']) and 
+			  isset($value['data']))){			
+			$retArr['error'] = true;
+			return json_encode($retArr);
+		}
+		
+		$signData  = $value['from'] . $value['to'] . $value['fee'];
+		$signData .= $value['value'] . $value['data'];
+		
+		$privateKey = file_get_contents(ROOTDIR . 'keys/' . $value['from'] . '.key');
+
+		if ($crypto->is_base64_encoded($privateKey)){
+			$privateKey = bin2hex(base64_decode($privateKey));
+		}
+
+		$sign = $crypto->sign($signData, $privateKey);
+		$publicKey  = $crypto->privateToPublic($privateKey);
+		$value['publicKey']   = $publicKey;
+		$value['signature']   = $sign;
+		$value['hash']   = hash('sha256', hash('sha256', $signData));
+		$postData['params'][] = $value;
+	}
+
+	$postData = json_encode($postData);
+	$curl = curl_init();
+	curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
+	curl_setopt($curl, CURLOPT_POST, 1);
+	curl_setopt($curl, CURLOPT_HTTPGET, false);
+	curl_setopt($curl, CURLOPT_POSTFIELDS, $postData);
+	curl_setopt($curl, CURLOPT_HTTPHEADER, $proxyHeader);
+	curl_setopt($curl, CURLOPT_URL, $urlCore);
+	$res = curl_exec($curl);
+	return $res;
 }
 
 $postData = file_get_contents('php://input');
@@ -78,6 +124,7 @@ if (is_null($data)){
 include_once (ROOTDIR . 'includes/vendor/autoload.php');
 // include_once (ROOTDIR . 'includes/Ecdsa.php');
 include_once (ROOTDIR . 'includes/Ecdsa16.php');
+include_once (ROOTDIR . 'includes/config.php');
 
 if (!isset($data['method'])){
 	echo json_encode(array('err' => true, 'msg' => 'no method in data')); exit;
@@ -88,7 +135,7 @@ switch ($data['method']) {
 		mhcVerify($data);
 		exit;
 	case 'mh_sendTransaction':
-		mhcSendTransaction($data);
+		echo mhcSendTransaction($data, $urlCore);
 		exit;
 	case 'mh_createAddress':
 		mhcCreateAddress($data);
